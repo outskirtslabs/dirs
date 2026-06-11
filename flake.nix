@@ -6,19 +6,41 @@
     devshell.inputs.nixpkgs.follows = "nixpkgs";
     devenv.url = "github:ramblurr/nix-devenv";
     devenv.inputs.nixpkgs.follows = "nixpkgs";
-    clojure-nix-locker.url = "github:bevuta/clojure-nix-locker";
-    clojure-nix-locker.inputs.nixpkgs.follows = "nixpkgs";
+    clj-helpers.url = "github:outskirtslabs/clojure-nix-locker-helpers";
+    clj-helpers.inputs.nixpkgs.follows = "nixpkgs";
   };
   outputs =
     inputs@{
-      clojure-nix-locker,
       self,
       devenv,
       devshell,
+      clj-helpers,
       ...
     }:
     let
-      jdk = "jdk25";
+      package =
+        pkgs:
+        clj-helpers.lib.mkCljLib {
+          inherit pkgs;
+          name = "dirs";
+          version = "0.1.0";
+          src = ./.;
+          prepAliases = [
+            "dev"
+            "kaocha"
+          ];
+          prefetchAliases = [
+            "dev:kaocha"
+            "dev:shadow-cljs"
+          ];
+          checkCommand = ''
+            clojure -Srepro -M:dev:kaocha :unit
+            clojure -Srepro -M:dev:shadow-cljs compile kaocha-test
+            node target/kaocha-tests.js
+          '';
+          gitRev = clj-helpers.lib.gitRev self;
+          nativeBuildInputs = [ pkgs.nodejs ];
+        };
     in
     devenv.lib.mkFlake ./. {
       inherit inputs;
@@ -27,89 +49,9 @@
         devenv.overlays.default
       ];
       packages = {
-        default =
-          pkgs:
-          let
-            jdkPackage = pkgs.${jdk};
-            clojure = pkgs.clojure.override { jdk = jdkPackage; };
-            lockerPkgs = pkgs // {
-              clojure = clojure;
-            };
-            gitRev =
-              if self ? rev then
-                self.rev
-              else if self ? dirtyRev then
-                self.dirtyRev
-              else
-                "dirty";
-            clojureLocker = (import "${clojure-nix-locker}/default.nix" { pkgs = lockerPkgs; }).lockfile {
-              src = ./.;
-              lockfile = "./deps-lock.json";
-              extraPrepInputs = [ pkgs.git ];
-            };
-          in
-          pkgs.stdenv.mkDerivation {
-            pname = "dirs";
-            version = "0.1.0";
-            src = ./.;
-            nativeBuildInputs = [
-              clojure
-              pkgs.coreutils
-              pkgs.findutils
-              pkgs.git
-              jdkPackage
-              pkgs.nodejs
-            ];
-            GIT_REV = gitRev;
-            JAVA_HOME = jdkPackage.home;
-            buildPhase = ''
-              runHook preBuild
-
-              source ${clojureLocker.shellEnv}
-              export JAVA_HOME="${jdkPackage.home}"
-              export JAVA_CMD="${jdkPackage}/bin/java"
-
-              clojure -Srepro -M:dev:kaocha :unit
-              clojure -Srepro -M:dev:shadow-cljs compile kaocha-test
-              node target/kaocha-tests.js
-              clojure -Srepro -T:build jar
-
-              runHook postBuild
-            '';
-            installPhase = ''
-              runHook preInstall
-
-              mkdir -p $out
-              cp "$(find target -type f -name '*.jar' -print | head -n 1)" $out/
-
-              runHook postInstall
-            '';
-          };
-        locker =
-          pkgs:
-          let
-            jdkPackage = pkgs.${jdk};
-            clojure = pkgs.clojure.override { jdk = jdkPackage; };
-            lockerPkgs = pkgs // {
-              clojure = clojure;
-            };
-            clojureLocker = (import "${clojure-nix-locker}/default.nix" { pkgs = lockerPkgs; }).lockfile {
-              src = ./.;
-              lockfile = "./deps-lock.json";
-              extraPrepInputs = [ pkgs.git ];
-            };
-          in
-          clojureLocker.commandLocker ''
-            export HOME="$tmp/home"
-            export GITLIBS="$tmp/home/.gitlibs"
-            unset CLJ_CACHE CLJ_CONFIG XDG_CACHE_HOME XDG_CONFIG_HOME XDG_DATA_HOME
-            export GIT_REV="lockfile-generation"
-
-            ${clojure}/bin/clojure -Srepro -X:deps prep :aliases "[:dev :kaocha]"
-            ${clojure}/bin/clojure -Srepro -P -M:dev:kaocha
-            ${clojure}/bin/clojure -Srepro -P -M:dev:shadow-cljs
-            ${clojure}/bin/clojure -Srepro -T:build jar
-          '';
+        default = package;
+        # regenerates ./deps-lock.json: `nix run .#locker`
+        locker = pkgs: (package pkgs).locker;
       };
       devShell =
         pkgs:
@@ -122,12 +64,16 @@
             # { package = pkgs.bazqux; }
           ];
           packages = [
-            (if self ? packages then self.packages.${pkgs.system}.locker else pkgs.deps-lock)
+            (
+              if self ? packages then
+                self.packages.${pkgs.system}.locker
+              else
+                clj-helpers.packages.${pkgs.system}.deps-lock
+            )
             pkgs.dart
             pkgs.jdk25
             pkgs.nodejs
           ];
-
         };
     };
 }
