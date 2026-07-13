@@ -6,6 +6,7 @@ ____
 
 image:https://img.shields.io/badge/doc-outskirtslabs-orange.svg[doc,link=https://docs.outskirtslabs.com/ol.dirs/next/]
 image:https://img.shields.io/badge/status-maturing-yellow.svg[status: maturing,link=https://docs.outskirtslabs.com/open-source-vital-signs#maturing]
+image:https://ci.outskirtslabs.com/repos/github/outskirtslabs/dirs/badge.svg[alt=nixbot,link=https://ci.outskirtslabs.com/repos/github/outskirtslabs/dirs]
 https://clojars.org/com.outskirtslabs/dirs[image:https://img.shields.io/clojars/v/com.outskirtslabs/dirs.svg[Clojars Project]]
 
 `ol.dirs` returns string paths or vectors of string paths. It does not create directories, does not check whether they exist, and carries no runtime dependencies.
